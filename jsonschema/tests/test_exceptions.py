@@ -848,6 +848,129 @@ class TestErrorTree(TestCase):
         self.assertEqual(repr(tree), "<ErrorTree (0 total errors)>")
 
 
+class _ContextIterator:
+    def __init__(self, errors):
+        self.errors = iter(errors)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return next(self.errors)
+
+
+def _context_generator(errors):
+    yield from errors
+
+
+class TestErrorContext(TestCase):
+    context_factories = (
+        list, tuple, iter, _context_generator, _ContextIterator,
+    )
+
+    def test_context_iterables_set_parent_and_absolute_paths(self):
+        for error_cls in (exceptions.ValidationError, exceptions.SchemaError):
+            for context_factory in self.context_factories:
+                with self.subTest(
+                    error_cls=error_cls, context=context_factory,
+                ):
+                    children = [
+                        error_cls(
+                            "first", path=["name"], schema_path=[0, "type"],
+                        ),
+                        error_cls(
+                            "second", path=["age"], schema_path=[1, "type"],
+                        ),
+                    ]
+                    parent = error_cls(
+                        "parent",
+                        path=["record"],
+                        schema_path=["properties", "record", "anyOf"],
+                        context=context_factory(children),
+                    )
+                    self.assertIsInstance(parent.context, list)
+                    self.assertEqual(parent.context, children)
+                    self.assertIsNone(parent.parent)
+                    for index, (child, name) in enumerate(
+                        zip(children, ["name", "age"]),
+                    ):
+                        self.assertIs(parent.context[index], child)
+                        self.assertIs(child.parent, parent)
+                        self.assertEqual(list(child.relative_path), [name])
+                        self.assertEqual(
+                            list(child.relative_schema_path), [index, "type"],
+                        )
+                        self.assertEqual(
+                            list(child.absolute_path), ["record", name],
+                        )
+                        self.assertEqual(
+                            list(child.absolute_schema_path),
+                            ["properties", "record", "anyOf", index, "type"],
+                        )
+                        self.assertEqual(child.json_path, f"$.record.{name}")
+
+    def test_nested_context_iterables_link_each_parent(self):
+        for error_cls in (exceptions.ValidationError, exceptions.SchemaError):
+            for context_factory in self.context_factories:
+                with self.subTest(
+                    error_cls=error_cls, context=context_factory,
+                ):
+                    child = error_cls(
+                        "child", path=["full name"], schema_path=[0, "type"],
+                    )
+                    parent = error_cls(
+                        "parent",
+                        path=[0],
+                        schema_path=["items", "anyOf"],
+                        context=context_factory([child]),
+                    )
+                    root = error_cls(
+                        "root",
+                        path=["records"],
+                        schema_path=["properties", "records"],
+                        context=context_factory([parent]),
+                    )
+                    self.assertIs(root.context[0], parent)
+                    self.assertIs(parent.context[0], child)
+                    self.assertIs(parent.parent, root)
+                    self.assertIs(child.parent, parent)
+                    self.assertIsNone(root.parent)
+                    self.assertEqual(
+                        list(parent.absolute_path), ["records", 0],
+                    )
+                    self.assertEqual(
+                        list(child.absolute_path), ["records", 0, "full name"],
+                    )
+                    self.assertEqual(
+                        list(child.absolute_schema_path),
+                        ["properties", "records", "items", "anyOf", 0, "type"],
+                    )
+                    self.assertEqual(
+                        child.json_path, "$.records[0]['full name']",
+                    )
+
+    def test_empty_context_iterables(self):
+        for error_cls in (exceptions.ValidationError, exceptions.SchemaError):
+            for context_factory in self.context_factories:
+                with self.subTest(
+                    error_cls=error_cls, context=context_factory,
+                ):
+                    error = error_cls(
+                        "error",
+                        path=["record"],
+                        schema_path=["properties", "record"],
+                        context=context_factory([]),
+                    )
+                    self.assertEqual(error.context, [])
+                    self.assertIsNone(error.parent)
+                    self.assertEqual(list(error.absolute_path), ["record"])
+                    self.assertEqual(
+                        list(error.absolute_schema_path),
+                        ["properties", "record"],
+                    )
+                    self.assertEqual(error.json_path, "$.record")
+
+
 class TestErrorInitReprStr(TestCase):
     def make_error(self, **kwargs):
         defaults = dict(
