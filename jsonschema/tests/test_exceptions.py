@@ -849,6 +849,37 @@ class TestErrorTree(TestCase):
 
 
 class TestErrorInitReprStr(TestCase):
+    def test_context_iterables_link_children_to_their_parent(self):
+        for error_type in (exceptions.ValidationError, exceptions.SchemaError):
+            for make_context in (list, tuple, iter):
+                with self.subTest(error_type=error_type, context=make_context):
+                    children = [
+                        error_type(
+                            "child", path=[name], schema_path=[i, "type"],
+                        )
+                        for i, name in enumerate(("name", "age"))
+                    ]
+                    parent = error_type(
+                        "parent",
+                        path=["record"],
+                        schema_path=["properties", "record", "anyOf"],
+                        context=make_context(children),
+                    )
+
+                    self.assertEqual(parent.context, children)
+                    for i, child in enumerate(children):
+                        name = child.path[0]
+                        self.assertIs(child.parent, parent)
+                        self.assertEqual(list(child.path), [name])
+                        self.assertEqual(
+                            list(child.absolute_path), ["record", name],
+                        )
+                        self.assertEqual(
+                            list(child.absolute_schema_path),
+                            ["properties", "record", "anyOf", i, "type"],
+                        )
+                        self.assertEqual(child.json_path, f"$.record.{name}")
+
     def make_error(self, **kwargs):
         defaults = dict(
             message="hello",
