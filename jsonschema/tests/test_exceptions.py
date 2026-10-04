@@ -1078,6 +1078,20 @@ class TestJsonPathRendering(TestCase):
     def test_space(self):
         self.validate_json_path_rendering(" ", "$[' ']")
 
+    def test_newlines(self):
+        for name in ("name\n", "name\n\n", "\nname", "na\nme"):
+            with self.subTest(name=name):
+                self.validate_json_path_rendering(name, f"$['{name}']")
+
+    def test_trailing_newline_selects_the_invalid_property(self):
+        instance = {"name": "valid", "name\n": 123}
+        schema = {"additionalProperties": {"type": "string"}}
+        error = next(_LATEST_VERSION(schema).iter_errors(instance))
+
+        matches = jsonpath_ng.parse(error.json_path).find(instance)
+
+        self.assertEqual([match.value for match in matches], [123])
+
     def test_backslash(self):
         self.validate_json_path_rendering("\\", r"$['\\']")
 

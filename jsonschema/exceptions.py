@@ -160,7 +160,7 @@ class _Error(Exception):
         for elem in self.absolute_path:
             if isinstance(elem, int):
                 path += "[" + str(elem) + "]"
-            elif _JSON_PATH_COMPATIBLE_PROPERTY_PATTERN.match(elem):
+            elif _JSON_PATH_COMPATIBLE_PROPERTY_PATTERN.fullmatch(elem):
                 path += "." + elem
             else:
                 escaped_elem = elem.replace("\\", "\\\\").replace("'", r"\'")
